@@ -1,0 +1,15 @@
+{
+	"servers": {
+		"remote ssh": {
+			"type": "stdio",
+			"command": "docker",
+			"args": [
+				"run",
+				"--rm",
+				"-i",
+				"ssh-mcp-server"
+			]
+		}
+	},
+	"inputs": []
+}
