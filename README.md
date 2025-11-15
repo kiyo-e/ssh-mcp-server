@@ -1,108 +1,117 @@
-# SSH MCP Server (Bun + Hono)
+# SSH MCP Server
 
-This project exposes an MCP server that works over both HTTP and stdio. Tools like Claude Code, Cursor, or any MCP-capable agent can open a persistent SSH shell, execute commands, and close the session cleanly. Sessions only live in container memory, so the remote SSH target stays untouched.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/kiyo-e/ssh-mcp-server/pkgs/container/ssh-mcp-server)
+
+A Model Context Protocol (MCP) server that enables AI agents like Claude Code and Cursor to execute commands on remote servers via persistent SSH sessions. Built with Bun and Hono for high performance and ease of deployment.
+
+## Overview
+
+This MCP server provides a secure, stateful SSH interface for AI-powered development tools. It maintains persistent SSH connections in memory, allowing agents to execute commands across sessions without requiring any software installation on remote hosts.
+
+**Key Benefits:**
+- **Zero Installation**: No agent software needed on remote servers
+- **Stateful Sessions**: Maintain context across multiple commands (e.g., `cd` followed by `ls`)
+- **Dual Transport**: Works as both an HTTP service and stdio-based command
+- **Secure by Default**: Key-based authentication with automatic session cleanup
 
 ## Features
 
-- Bun runtime with the Hono web framework.
-- MCP server built using `@modelcontextprotocol/sdk` + `@hono/mcp`.
-- `ssh2`-backed persistent sessions with idle cleanup and history suppression.
-- Tools: `ssh_open`, `ssh_exec`, `ssh_close`.
-- Dual transports: HTTP endpoint (`POST /mcp`) and stdio transport for `type: "command"` clients.
+- **Persistent SSH Sessions**: Powered by `ssh2` with automatic idle cleanup after 30 minutes
+- **Three Simple Tools**: `ssh_open`, `ssh_exec`, and `ssh_close` for complete session control
+- **Flexible Transport**: HTTP endpoint (`POST /mcp`) or stdio for command-based MCP clients
+- **Lightweight & Fast**: Built on Bun runtime and Hono web framework
+- **Container Ready**: Pre-built Docker images available on GitHub Container Registry
 
-## Project Structure
+## Quick Start
 
-```
-.
-├── Dockerfile
-├── package.json
-├── tsconfig.json
-└── src
-    ├── index.ts         # Hono HTTP entry + MCP transport
-    ├── mcpServer.ts     # MCP tool registration
-    ├── sshSessions.ts   # SSH session lifecycle helpers
-    └── stdio.ts         # STDIO entry point for command transports
+### Using Docker (Recommended)
+
+Pull the pre-built image:
+
+```bash
+docker pull ghcr.io/kiyo-e/ssh-mcp-server:latest
 ```
 
-## Prerequisites
+Run in stdio mode for MCP clients:
 
-- Bun v1.1+ (for local development)
-- Docker (optional, for containerized deployment)
-- SSH credentials for the remote hosts you plan to reach
+```bash
+docker run --rm -i \
+  -e SSH_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)" \
+  ghcr.io/kiyo-e/ssh-mcp-server:latest \
+  bun run src/stdio.ts
+```
 
-## Setup
+### Local Development
+
+Install dependencies:
 
 ```bash
 bun install
 ```
 
-> If Bun cannot write to your temp directory (common in sandboxed environments), point it to a writable folder: `TMPDIR=$(pwd)/.tmp bun install`.
-
-## Runtime Modes
-
-### HTTP server (default)
+Start the server:
 
 ```bash
-bun run src/index.ts
-# or
+# HTTP mode (default port 3000)
 bun run start:http
-```
 
-The server listens on `http://0.0.0.0:3000` by default. Override with `PORT=4000 bun run src/index.ts` as needed.
-
-### STDIO server (for `type: "command"` MCP clients)
-
-```bash
-bun run src/stdio.ts
-# or
+# STDIO mode for command-based MCP clients
 bun run start:stdio
 ```
 
-This mode keeps all traffic on stdio, which is what Claude Code's Command MCP adapter expects. Point your MCP client at this executable directly, or wrap it in Docker as shown below.
+## MCP Tools
 
-## MCP Client Registration Examples
+This server exposes three tools for managing SSH sessions:
 
-**HTTP transport**
+| Tool        | Description                                              | Parameters                                                        |
+|-------------|----------------------------------------------------------|-------------------------------------------------------------------|
+| `ssh_open`  | Opens a new SSH session with password or key-based auth  | `host`, `username`, optional `port`, optional `password`          |
+| `ssh_exec`  | Executes a command on an existing session                | `sessionId`, `command`, optional `timeoutMs`                      |
+| `ssh_close` | Closes an active session and frees resources             | `sessionId`                                                       |
 
-```json
-{
-  "servers": {
-    "ssh-mcp": {
-      "type": "http",
-      "url": "http://localhost:3000/mcp"
-    }
-  }
-}
+### Example Workflow
+
+```javascript
+// 1. Open a session
+const session = await ssh_open({
+  host: "example.com",
+  username: "deploy",
+  port: 22
+});
+
+// 2. Execute commands (maintains state)
+await ssh_exec({ sessionId: session.id, command: "cd /var/www" });
+await ssh_exec({ sessionId: session.id, command: "ls -la" });
+
+// 3. Close when done
+await ssh_close({ sessionId: session.id });
 ```
 
-**STDIO / command transport (Claude Code, Cursor, etc.)**
+## Configuration
+
+Add this server to your MCP client configuration file.
+
+### For Claude Code / Cursor (Command Transport)
+
+**Using Docker (Recommended):**
 
 ```json
 {
-  "servers": {
-    "ssh-mcp": {
-      "type": "command",
-      "command": ["bun", "run", "src/stdio.ts"],
-      "env": {
-        "SSH_PRIVATE_KEY": "$(cat ~/.ssh/id_rsa)"
-      }
-    }
-  }
-}
-```
-
-When using Docker, the command array could look like:
-
-```json
-{
-  "servers": {
+  "mcpServers": {
     "ssh-mcp": {
       "type": "command",
       "command": [
-        "docker", "run", "--rm", "-i",
-        "-e", "SSH_PRIVATE_KEY",
-        "ssh-mcp-server",
-        "bun", "run", "src/stdio.ts"
+        "docker",
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "SSH_PRIVATE_KEY",
+        "ghcr.io/kiyo-e/ssh-mcp-server:latest",
+        "bun",
+        "run",
+        "src/stdio.ts"
       ],
       "env": {
         "SSH_PRIVATE_KEY": "$(cat ~/.ssh/id_rsa)"
@@ -112,40 +121,100 @@ When using Docker, the command array could look like:
 }
 ```
 
-The `-e SSH_PRIVATE_KEY` flag tells Docker to forward the env var coming from the MCP client host into the container so the server can authenticate via key-based SSH.
+**Using Local Installation:**
 
-## MCP Tools
-
-| Tool       | Description | Required Inputs |
-|------------|-------------|-----------------|
-| `ssh_open` | Establishes a session using password or the container's `SSH_PRIVATE_KEY` env var | `host`, `username`, optional `port`, optional `password` |
-| `ssh_exec` | Executes a shell command on an existing session | `sessionId`, `command`, optional `timeoutMs` |
-| `ssh_close`| Explicitly closes the session | `sessionId` |
-
-## Environment Variables
-
-- `SSH_PRIVATE_KEY`: Private key material to use when `ssh_open` is called without a password.
-- `PORT`: HTTP port for the MCP server (defaults to `3000`).
-
-## Docker Usage
-
-```bash
-docker build -t ssh-mcp-server .
-
-# HTTP mode
-docker run --rm -p 3000:3000 \
-  -e SSH_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)" \
-  ssh-mcp-server
-
-# STDIO mode (note -i to keep stdin open)
-docker run --rm -i \
-  -e SSH_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)" \
-  ssh-mcp-server \
-  bun run src/stdio.ts
+```json
+{
+  "mcpServers": {
+    "ssh-mcp": {
+      "type": "command",
+      "command": ["bun", "run", "/path/to/ssh-mcp-server/src/stdio.ts"],
+      "env": {
+        "SSH_PRIVATE_KEY": "$(cat ~/.ssh/id_rsa)"
+      }
+    }
+  }
+}
 ```
 
-## Production Notes
+### For HTTP Transport
 
-- Sessions expire after 30 minutes of inactivity (tunable in `src/sshSessions.ts`).
-- Commands stream through a persistent shell, so stateful workflows (e.g., `cd` then `ls`) work within a session.
-- Always call `ssh_close` when finished to release resources promptly.
+```json
+{
+  "mcpServers": {
+    "ssh-mcp": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp"
+    }
+  }
+}
+```
+
+### Environment Variables
+
+| Variable          | Description                                              | Required |
+|-------------------|----------------------------------------------------------|----------|
+| `SSH_PRIVATE_KEY` | Private key content for key-based authentication         | No*      |
+| `PORT`            | HTTP server port (default: 3000)                         | No       |
+
+*Required if not using password authentication with `ssh_open`
+
+## Advanced Usage
+
+### Custom Port Configuration
+
+```bash
+# HTTP mode with custom port
+PORT=4000 bun run src/index.ts
+
+# Docker with custom port
+docker run --rm -p 4000:4000 \
+  -e PORT=4000 \
+  -e SSH_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)" \
+  ghcr.io/kiyo-e/ssh-mcp-server:latest
+```
+
+### Sandboxed Environment Installation
+
+If Bun cannot write to your temp directory (common in sandboxed environments):
+
+```bash
+TMPDIR=$(pwd)/.tmp bun install
+```
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/kiyo-e/ssh-mcp-server.git
+cd ssh-mcp-server
+
+# Install dependencies
+bun install
+
+# Build Docker image
+docker build -t ssh-mcp-server .
+```
+
+## Best Practices
+
+- **Session Management**: Always call `ssh_close` when done to free resources immediately
+- **Idle Timeout**: Sessions automatically expire after 30 minutes of inactivity
+- **Stateful Commands**: Take advantage of persistent shells for multi-step operations (e.g., `cd` then `ls`)
+- **Security**: Use key-based authentication when possible; avoid hardcoding passwords
+
+## Requirements
+
+- **Runtime**: Bun v1.1+ (for local development)
+- **Container**: Docker (optional but recommended)
+- **SSH Access**: Valid credentials for target remote hosts
+
+## Links
+
+- **Repository**: [github.com/kiyo-e/ssh-mcp-server](https://github.com/kiyo-e/ssh-mcp-server)
+- **Container Images**: [ghcr.io/kiyo-e/ssh-mcp-server](https://github.com/kiyo-e/ssh-mcp-server/pkgs/container/ssh-mcp-server)
+- **Issues**: [Report bugs or request features](https://github.com/kiyo-e/ssh-mcp-server/issues)
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
