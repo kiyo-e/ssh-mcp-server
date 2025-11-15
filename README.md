@@ -36,10 +36,15 @@ docker pull ghcr.io/kiyo-e/ssh-mcp-server:latest
 Run in stdio mode for MCP clients:
 
 ```bash
+docker run --rm -i ghcr.io/kiyo-e/ssh-mcp-server:latest
+```
+
+**With SSH key authentication:**
+
+```bash
 docker run --rm -i \
   -e SSH_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)" \
-  ghcr.io/kiyo-e/ssh-mcp-server:latest \
-  bun run src/stdio.ts
+  ghcr.io/kiyo-e/ssh-mcp-server:latest
 ```
 
 ### Local Development
@@ -90,28 +95,55 @@ await ssh_close({ sessionId: session.id });
 
 ## Configuration
 
-Add this server to your MCP client configuration file.
+### For Claude Code
 
-### For Claude Code / Cursor (Command Transport)
+**Quick Setup (Using Docker):**
 
-**Using Docker (Recommended):**
+```bash
+# Add the MCP server using Claude Code CLI
+claude mcp add ssh-mcp docker run --rm -i ghcr.io/kiyo-e/ssh-mcp-server:latest
+```
+
+**With SSH key authentication:**
+
+```bash
+# Add with SSH_PRIVATE_KEY environment variable
+claude mcp add ssh-mcp docker run --rm -i -e SSH_PRIVATE_KEY ghcr.io/kiyo-e/ssh-mcp-server:latest \
+  --env SSH_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)"
+```
+
+Or manually edit your Claude Code configuration file (`~/.config/claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "ssh-mcp": {
-      "type": "command",
-      "command": [
-        "docker",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "ghcr.io/kiyo-e/ssh-mcp-server:latest"
+      ]
+    }
+  }
+}
+```
+
+**With SSH key (manual configuration):**
+
+```json
+{
+  "mcpServers": {
+    "ssh-mcp": {
+      "command": "docker",
+      "args": [
         "run",
         "--rm",
         "-i",
         "-e",
         "SSH_PRIVATE_KEY",
-        "ghcr.io/kiyo-e/ssh-mcp-server:latest",
-        "bun",
-        "run",
-        "src/stdio.ts"
+        "ghcr.io/kiyo-e/ssh-mcp-server:latest"
       ],
       "env": {
         "SSH_PRIVATE_KEY": "$(cat ~/.ssh/id_rsa)"
@@ -121,14 +153,56 @@ Add this server to your MCP client configuration file.
 }
 ```
 
-**Using Local Installation:**
+### For OpenAI Codex
+
+Add to your Codex MCP configuration:
+
+```bash
+# Add via command line
+codex mcp add ssh-mcp docker run --rm -i ghcr.io/kiyo-e/ssh-mcp-server:latest
+```
+
+**With SSH key authentication:**
+
+```bash
+# Add with SSH_PRIVATE_KEY environment variable
+codex mcp add ssh-mcp docker run --rm -i -e SSH_PRIVATE_KEY ghcr.io/kiyo-e/ssh-mcp-server:latest \
+  --env SSH_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)"
+```
+
+Or manually configure:
 
 ```json
 {
   "mcpServers": {
     "ssh-mcp": {
-      "type": "command",
-      "command": ["bun", "run", "/path/to/ssh-mcp-server/src/stdio.ts"],
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "ghcr.io/kiyo-e/ssh-mcp-server:latest"
+      ]
+    }
+  }
+}
+```
+
+**With SSH key (manual configuration):**
+
+```json
+{
+  "mcpServers": {
+    "ssh-mcp": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "SSH_PRIVATE_KEY",
+        "ghcr.io/kiyo-e/ssh-mcp-server:latest"
+      ],
       "env": {
         "SSH_PRIVATE_KEY": "$(cat ~/.ssh/id_rsa)"
       }
