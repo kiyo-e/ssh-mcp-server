@@ -1,0 +1,27 @@
+services:
+  ssh-mcp:
+    image: ghcr.io/kiyo-e/ssh-mcp-server:latest
+    container_name: ssh-mcp
+    environment:
+      # Provide an SSH private key when needed
+      - PORT=3000
+    # Base image entrypoint expects /bin/sh, so invoke Bun directly to start HTTP mode
+    entrypoint: ["bun", "run", "start:http"]
+    ports:
+      - "3000:3000"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    depends_on:
+      - ssh-mcp
+    environment:
+      # Required: set the Cloudflare Named Tunnel token on the host
+      - TUNNEL_TOKEN
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - "${TUNNEL_TOKEN}"
+    restart: unless-stopped

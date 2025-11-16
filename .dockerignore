@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.tmp
+.git
+.gitignore
+.env
+
+example
+
+# IDE / OS
+.DS_Store
+.vscode
